@@ -1,0 +1,20 @@
+checker-ns-restrictions
+Copyright (c) 2020-2026 happyDomain
+Authors: Pierre-Olivier Mercier, et al.
+
+-------------------------------------------------------------------------------
+Third-party notices
+-------------------------------------------------------------------------------
+
+This product includes software developed as part of the checker-sdk-go
+project (https://git.happydns.org/happyDomain/checker-sdk-go), licensed
+under the Apache License, Version 2.0:
+
+    checker-sdk-go
+    Copyright 2020-2026 The happyDomain Authors
+
+You may obtain a copy of the Apache License 2.0 at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+This product includes software developed as part of the miekg/dns project
+(https://github.com/miekg/dns), licensed under the BSD 3-Clause License.
