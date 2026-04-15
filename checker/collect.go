@@ -44,7 +44,16 @@ func (p *nsProvider) Collect(ctx context.Context, opts sdk.CheckerOptions) (any,
 
 	report := &NSRestrictionsReport{}
 	for _, ns := range nameServers {
-		nsHost := strings.TrimSuffix(ns.Ns, ".")
+		var nsHost string
+		if nsCut, ok := strings.CutSuffix(ns.Ns, "."); ok {
+			nsHost = nsCut
+		} else {
+			nsHost = ns.Ns
+			if svc.Domain != "" && svc.Domain != "@" {
+				nsHost += "." + strings.TrimSuffix(svc.Domain, ".")
+			}
+			nsHost += "." + strings.TrimSuffix(domainName, ".")
+		}
 		results := checkNameServer(ctx, domainName, nsHost)
 		report.Servers = append(report.Servers, results...)
 	}
