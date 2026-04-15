@@ -77,6 +77,7 @@ func (r *singleCheckRule) Evaluate(ctx context.Context, obs sdk.ObservationGette
 	status := sdk.StatusOK
 	var summaryParts []string
 	failingServers := make([]map[string]string, 0)
+	checked := false
 
 	for _, srv := range report.Servers {
 		item, found := findCheck(srv.Checks, r.checkName)
@@ -92,6 +93,8 @@ func (r *singleCheckRule) Evaluate(ctx context.Context, obs sdk.ObservationGette
 			continue
 		}
 
+		checked = true
+
 		if item.OK {
 			summaryParts = append(summaryParts, fmt.Sprintf("%s: OK", serverLabel(srv)))
 			continue
@@ -106,6 +109,10 @@ func (r *singleCheckRule) Evaluate(ctx context.Context, obs sdk.ObservationGette
 			"address": srv.Address,
 			"detail":  item.Detail,
 		})
+	}
+
+	if !checked {
+		status = sdk.StatusUnknown
 	}
 
 	return sdk.CheckState{
