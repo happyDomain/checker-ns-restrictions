@@ -3,7 +3,6 @@ package checker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	sdk "git.happydns.org/checker-sdk-go/checker"
 )
@@ -64,66 +63,65 @@ type singleCheckRule struct {
 func (r *singleCheckRule) Name() string        { return r.ruleName }
 func (r *singleCheckRule) Description() string { return r.description }
 
-func (r *singleCheckRule) Evaluate(ctx context.Context, obs sdk.ObservationGetter, opts sdk.CheckerOptions) sdk.CheckState {
+func (r *singleCheckRule) Evaluate(ctx context.Context, obs sdk.ObservationGetter, opts sdk.CheckerOptions) []sdk.CheckState {
 	var report NSRestrictionsReport
 	if err := obs.Get(ctx, ObservationKeyNSRestrictions, &report); err != nil {
-		return sdk.CheckState{
+		return []sdk.CheckState{{
 			Status:  sdk.StatusError,
 			Message: fmt.Sprintf("Failed to get NS restrictions data: %v", err),
 			Code:    r.code + "_error",
-		}
+		}}
 	}
 
-	status := sdk.StatusOK
-	var summaryParts []string
-	failingServers := make([]map[string]string, 0)
-	checked := false
-
+	out := make([]sdk.CheckState, 0, len(report.Servers))
 	for _, srv := range report.Servers {
-		item, found := findCheck(srv.Checks, r.checkName)
-		if !found {
-			// The collect step did not run this check on this server
-			// (e.g. IPv6 unreachable, DNS resolution failure). Surface
-			// the reason from whichever entry the server does have.
-			if len(srv.Checks) > 0 {
-				summaryParts = append(summaryParts, fmt.Sprintf("%s: skipped (%s)", serverLabel(srv), srv.Checks[0].Detail))
-			} else {
-				summaryParts = append(summaryParts, fmt.Sprintf("%s: skipped", serverLabel(srv)))
-			}
-			continue
-		}
-
-		checked = true
-
-		if item.OK {
-			summaryParts = append(summaryParts, fmt.Sprintf("%s: OK", serverLabel(srv)))
-			continue
-		}
-
-		if status < r.failStatus {
-			status = r.failStatus
-		}
-		summaryParts = append(summaryParts, fmt.Sprintf("%s: FAIL (%s)", serverLabel(srv), item.Detail))
-		failingServers = append(failingServers, map[string]string{
+		meta := map[string]any{
+			"check":   r.checkName,
 			"name":    srv.Name,
 			"address": srv.Address,
-			"detail":  item.Detail,
-		})
+		}
+
+		item, found := findCheck(srv.Checks, r.checkName)
+		if !found {
+			message := "check not performed"
+			if len(srv.Checks) > 0 {
+				message = fmt.Sprintf("skipped: %s", srv.Checks[0].Detail)
+			}
+			out = append(out, sdk.CheckState{
+				Status:  sdk.StatusUnknown,
+				Message: message,
+				Code:    r.code + "_skipped",
+				Subject: serverLabel(srv),
+				Meta:    meta,
+			})
+			continue
+		}
+
+		state := sdk.CheckState{
+			Code:    r.code + "_result",
+			Subject: serverLabel(srv),
+			Meta:    meta,
+			Message: item.Detail,
+		}
+		if item.OK {
+			state.Status = sdk.StatusOK
+			if state.Message == "" {
+				state.Message = "OK"
+			}
+		} else {
+			state.Status = r.failStatus
+		}
+		out = append(out, state)
 	}
 
-	if !checked {
-		status = sdk.StatusUnknown
+	if len(out) == 0 {
+		return []sdk.CheckState{{
+			Status:  sdk.StatusUnknown,
+			Message: "no nameserver to evaluate",
+			Code:    r.code + "_result",
+		}}
 	}
-
-	return sdk.CheckState{
-		Status:  status,
-		Message: strings.Join(summaryParts, " | "),
-		Code:    r.code + "_result",
-		Meta: map[string]any{
-			"check":           r.checkName,
-			"failing_servers": failingServers,
-		},
-	}
+	return out
 }
 
 func findCheck(items []NSCheckItem, name string) (NSCheckItem, bool) {
