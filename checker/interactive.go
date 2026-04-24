@@ -1,3 +1,5 @@
+//go:build standalone
+
 package checker
 
 import (
@@ -11,7 +13,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// RenderForm implements sdk.CheckerInteractive. It lists the minimal human
+// RenderForm implements server.Interactive. It lists the minimal human
 // inputs needed to bootstrap a check when this checker runs standalone
 // (outside of a happyDomain host).
 func (p *nsProvider) RenderForm() []sdk.CheckerOptionField {
@@ -27,9 +29,9 @@ func (p *nsProvider) RenderForm() []sdk.CheckerOptionField {
 	}
 }
 
-// ParseForm implements sdk.CheckerInteractive. It resolves the NS records
+// ParseForm implements server.Interactive. It resolves the NS records
 // for the requested domain via DNS and assembles the CheckerOptions that
-// Collect expects — replacing the AutoFill work that happyDomain would
+// Collect expects, replacing the AutoFill work that happyDomain would
 // otherwise perform.
 func (p *nsProvider) ParseForm(r *http.Request) (sdk.CheckerOptions, error) {
 	domain := strings.TrimSpace(r.FormValue("domain"))

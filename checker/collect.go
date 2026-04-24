@@ -63,7 +63,7 @@ func (p *nsProvider) Collect(ctx context.Context, opts sdk.CheckerOptions) (any,
 
 // serviceFromOptions extracts a *serviceMessage from the options. It accepts
 // either a direct value (in-process plugin path) or a JSON-decoded
-// map[string]any (HTTP path) — both are normalized via a JSON round-trip.
+// map[string]any (HTTP path), both are normalized via a JSON round-trip.
 func serviceFromOptions(opts sdk.CheckerOptions) (*serviceMessage, error) {
 	v, ok := opts["service"]
 	if !ok {

@@ -5,7 +5,7 @@ import (
 	"log"
 
 	nsr "git.happydns.org/checker-ns-restrictions/checker"
-	sdk "git.happydns.org/checker-sdk-go/checker"
+	"git.happydns.org/checker-sdk-go/checker/server"
 )
 
 // Version is the standalone binary's version. It defaults to "custom-build"
@@ -23,8 +23,8 @@ func main() {
 	// CheckerDefinition.Version.
 	nsr.Version = Version
 
-	server := sdk.NewServer(nsr.Provider())
-	if err := server.ListenAndServe(*listenAddr); err != nil {
+	srv := server.New(nsr.Provider())
+	if err := srv.ListenAndServe(*listenAddr); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
