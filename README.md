@@ -47,6 +47,20 @@ The plugin exposes a `NewCheckerPlugin` symbol returning the checker
 definition and observation provider, which happyDomain registers in its
 global registries at load time.
 
+### Deployment
+
+The `/collect` endpoint has no built-in authentication and will issue
+DNS queries (including AXFR/IXFR/ANY zone-transfer attempts) to whatever
+addresses the supplied NS hostnames resolve to. A caller that controls
+the input domain can publish NS records pointing at arbitrary IPs,
+including private/internal ranges (RFC 1918, loopback, link-local) or
+unrelated third-party hosts, and use this checker as an SSRF / probing
+relay against them. It is meant to run on a trusted network, reachable
+only by the happyDomain instance that drives it. Restrict access via a
+reverse proxy with authentication, a network ACL, or by binding the
+listener to a private interface; do not expose it directly to the
+public internet.
+
 ### Versioning
 
 The binary, plugin, and Docker image embed a version string overridable

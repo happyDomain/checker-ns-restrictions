@@ -17,7 +17,7 @@ var Version = "built-in"
 
 // Definition returns the CheckerDefinition for the NS security restrictions
 // checker.
-func Definition() *sdk.CheckerDefinition {
+func (p *nsProvider) Definition() *sdk.CheckerDefinition {
 	return &sdk.CheckerDefinition{
 		ID:      "ns_restrictions",
 		Name:    "NS Security Restrictions",

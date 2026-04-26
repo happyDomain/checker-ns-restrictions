@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	sdk "git.happydns.org/checker-sdk-go/checker"
 )
 
-// Collect performs the NS security restriction checks for the configured
-// service and returns an NSRestrictionsReport.
+// Collect gathers raw NS probe data for the configured service and returns an
+// NSRestrictionsReport. It does not make any pass/fail judgment: rules derive
+// status from the raw probe fields.
 func (p *nsProvider) Collect(ctx context.Context, opts sdk.CheckerOptions) (any, error) {
 	svc, err := serviceFromOptions(opts)
 	if err != nil {
@@ -42,23 +44,44 @@ func (p *nsProvider) Collect(ctx context.Context, opts sdk.CheckerOptions) (any,
 		return nil, fmt.Errorf("no nameservers found in service")
 	}
 
-	report := &NSRestrictionsReport{}
-	for _, ns := range nameServers {
-		var nsHost string
-		if nsCut, ok := strings.CutSuffix(ns.Ns, "."); ok {
-			nsHost = nsCut
-		} else {
-			nsHost = ns.Ns
-			if svc.Domain != "" && svc.Domain != "@" {
-				nsHost += "." + strings.TrimSuffix(svc.Domain, ".")
-			}
-			nsHost += "." + strings.TrimSuffix(domainName, ".")
-		}
-		results := checkNameServer(ctx, domainName, nsHost)
-		report.Servers = append(report.Servers, results...)
+	ipv6Reachable := probeIPv6(ctx)
+
+	all := make([][]NSServerResult, len(nameServers))
+	var wg sync.WaitGroup
+	wg.Add(len(nameServers))
+	for i, ns := range nameServers {
+		nsHost := buildNSHost(ns.Ns, svc.Domain, domainName)
+		go func() {
+			defer wg.Done()
+			all[i] = probeNameServer(ctx, domainName, nsHost, ipv6Reachable)
+		}()
+	}
+	wg.Wait()
+
+	report := &NSRestrictionsReport{
+		Domain:        domainName,
+		IPv6Reachable: ipv6Reachable,
+	}
+	for _, r := range all {
+		report.Servers = append(report.Servers, r...)
 	}
 
 	return report, nil
+}
+
+// buildNSHost resolves a possibly-relative NS record name against the service
+// domain and the full domain name, returning an absolute host without a
+// trailing dot.
+func buildNSHost(ns, svcDomain, domainName string) string {
+	if absolute, ok := strings.CutSuffix(ns, "."); ok {
+		return absolute
+	}
+	host := ns
+	if svcDomain != "" && svcDomain != "@" {
+		host += "." + strings.TrimSuffix(svcDomain, ".")
+	}
+	host += "." + strings.TrimSuffix(domainName, ".")
+	return host
 }
 
 // serviceFromOptions extracts a *serviceMessage from the options. It accepts
@@ -82,45 +105,56 @@ func serviceFromOptions(opts sdk.CheckerOptions) (*serviceMessage, error) {
 	return &svc, nil
 }
 
-// checkNameServer resolves nsHost and runs checks on each address.
-func checkNameServer(ctx context.Context, domain, nsHost string) []NSServerResult {
+// probeIPv6 returns true if the host appears to have IPv6 connectivity. It
+// dials a public DNS server over UDP once and treats ENETUNREACH as a signal
+// that IPv6 is unusable on this machine.
+func probeIPv6(ctx context.Context) bool {
+	var d net.Dialer
+	dialCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	conn, err := d.DialContext(dialCtx, "udp", net.JoinHostPort("2001:4860:4860::8888", dnsPort))
+	if errors.Is(err, syscall.ENETUNREACH) {
+		return false
+	}
+	if conn != nil {
+		conn.Close()
+	}
+	return true
+}
+
+// probeNameServer resolves nsHost and runs raw probes on each address in
+// parallel. When resolution fails, it emits one NSServerResult carrying
+// ResolutionError so the dedicated rule can surface the fact.
+func probeNameServer(ctx context.Context, domain, nsHost string, ipv6Reachable bool) []NSServerResult {
 	addrs, err := net.LookupHost(nsHost)
 	if err != nil {
 		return []NSServerResult{{
-			Name:    nsHost,
-			Address: "",
-			Checks: []NSCheckItem{{
-				Name:   "DNS resolution",
-				OK:     false,
-				Detail: fmt.Sprintf("lookup failed: %s", err),
-			}},
+			Name:            nsHost,
+			ResolutionError: err.Error(),
 		}}
 	}
 
-	var results []NSServerResult
-	for _, addr := range addrs {
-		// Skip IPv6 addresses when there is no IPv6 connectivity.
-		if ip := net.ParseIP(addr); ip != nil && ip.To4() == nil {
-			conn, err := net.DialTimeout("udp", net.JoinHostPort(addr, "53"), 3*time.Second)
-			if errors.Is(err, syscall.ENETUNREACH) {
-				results = append(results, NSServerResult{
-					Name:    nsHost,
-					Address: addr,
-					Checks: []NSCheckItem{{
-						Name:   "IPv6 connectivity",
-						OK:     true,
-						Detail: "unable to test due to the lack of IPv6 connectivity",
-					}},
-				})
-				continue
+	results := make([]NSServerResult, len(addrs))
+	var wg sync.WaitGroup
+	wg.Add(len(addrs))
+	for i, addr := range addrs {
+		go func() {
+			defer wg.Done()
+			if !ipv6Reachable {
+				if ip := net.ParseIP(addr); ip != nil && ip.To4() == nil {
+					results[i] = NSServerResult{
+						Name:           nsHost,
+						Address:        addr,
+						AddressSkipped: true,
+						SkipReason:     "host lacks IPv6 connectivity",
+					}
+					return
+				}
 			}
-			if conn != nil {
-				conn.Close()
-			}
-		}
-
-		results = append(results, checkServerAddr(ctx, domain, nsHost, addr))
+			results[i] = probeServerAddr(ctx, domain, nsHost, addr)
+		}()
 	}
+	wg.Wait()
 
 	return results
 }

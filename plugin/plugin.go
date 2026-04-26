@@ -6,6 +6,8 @@
 package main
 
 import (
+	"fmt"
+
 	nsr "git.happydns.org/checker-ns-restrictions/checker"
 	sdk "git.happydns.org/checker-sdk-go/checker"
 )
@@ -23,5 +25,10 @@ func NewCheckerPlugin() (*sdk.CheckerDefinition, sdk.ObservationProvider, error)
 	// Propagate the plugin's version to the checker package so it shows up
 	// in CheckerDefinition.Version.
 	nsr.Version = Version
-	return nsr.Definition(), nsr.Provider(), nil
+	prvd := nsr.Provider()
+	defProvider, ok := prvd.(sdk.CheckerDefinitionProvider)
+	if !ok {
+		return nil, nil, fmt.Errorf("provider %T does not implement sdk.CheckerDefinitionProvider", prvd)
+	}
+	return defProvider.Definition(), prvd, nil
 }

@@ -14,8 +14,3 @@ type nsProvider struct{}
 func (p *nsProvider) Key() sdk.ObservationKey {
 	return ObservationKeyNSRestrictions
 }
-
-// Definition implements sdk.CheckerDefinitionProvider.
-func (p *nsProvider) Definition() *sdk.CheckerDefinition {
-	return Definition()
-}

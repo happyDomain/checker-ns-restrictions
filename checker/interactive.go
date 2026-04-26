@@ -3,15 +3,22 @@
 package checker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	sdk "git.happydns.org/checker-sdk-go/checker"
 	"github.com/miekg/dns"
 )
+
+// resolveNSTimeout bounds the total time spent attempting NS resolution
+// across all configured fallback resolvers.
+const resolveNSTimeout = 15 * time.Second
 
 // RenderForm implements server.Interactive. It lists the minimal human
 // inputs needed to bootstrap a check when this checker runs standalone
@@ -48,7 +55,7 @@ func (p *nsProvider) ParseForm(r *http.Request) (sdk.CheckerOptions, error) {
 		return nil, fmt.Errorf("no NS records found for %s", domain)
 	}
 
-	payload, err := json.Marshal(originPayload{NameServers: nsRecords})
+	payload, err := json.Marshal(nsPayload{NameServers: nsRecords})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode origin payload: %w", err)
 	}
@@ -69,19 +76,28 @@ func (p *nsProvider) ParseForm(r *http.Request) (sdk.CheckerOptions, error) {
 // returns them as miekg *dns.NS records so they match the shape produced
 // by happyDomain's Origin service payload.
 func resolveNS(fqdn string) ([]*dns.NS, error) {
-	c := new(dns.Client)
+	ctx, cancel := context.WithTimeout(context.Background(), resolveNSTimeout)
+	defer cancel()
+
+	c := &dns.Client{Timeout: defaultQueryTimeout}
 	m := new(dns.Msg)
 	m.SetQuestion(fqdn, dns.TypeNS)
 	m.RecursionDesired = true
 
 	config, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 	if err != nil || config == nil || len(config.Servers) == 0 {
-		config = &dns.ClientConfig{Servers: []string{"1.1.1.1", "8.8.8.8"}, Port: "53"}
+		config = &dns.ClientConfig{Servers: []string{"1.1.1.1", "8.8.8.8"}, Port: dnsPort}
 	}
 
 	var lastErr error
 	for _, server := range config.Servers {
-		in, _, err := c.Exchange(m, server+":"+config.Port)
+		if err := ctx.Err(); err != nil {
+			if lastErr == nil {
+				lastErr = err
+			}
+			break
+		}
+		in, _, err := c.ExchangeContext(ctx, m, net.JoinHostPort(server, config.Port))
 		if err != nil {
 			lastErr = err
 			continue
