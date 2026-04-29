@@ -3,19 +3,10 @@
 Authoritative nameserver security restrictions checker for [happyDomain](https://www.happydomain.org/).
 
 For each nameserver of an `abstract.Origin` or `abstract.NSOnlyOrigin`
-service, this checker verifies common security misconfigurations:
-
-| Check                          | Severity on failure |
-|--------------------------------|---------------------|
-| AXFR zone transfer refused     | CRITICAL            |
-| IXFR zone transfer refused     | WARNING             |
-| Recursion not available (RA)   | WARNING             |
-| ANY query handling (RFC 8482)  | WARNING             |
-| Authoritative answer (AA bit)  | INFO                |
-
-The checker resolves each NS host, then runs the five DNS probes against
-every returned IPv4/IPv6 address. IPv6 targets are skipped gracefully if
-the host has no IPv6 connectivity.
+service, this checker resolves each NS host then runs a set of DNS probes
+against every returned IPv4/IPv6 address. IPv6 targets are skipped
+gracefully if the host has no IPv6 connectivity. See [Rules](#rules) below
+for the full list of checks performed.
 
 ## Usage
 
@@ -72,11 +63,20 @@ make plugin CHECKER_VERSION=1.2.3
 make docker CHECKER_VERSION=1.2.3
 ```
 
+## Rules
+
+Each rule emits one `CheckState` per probed nameserver address, carrying a
+stable `code` so downstream consumers can match on them deterministically.
+
+| Rule                  | Description                                                                                       | Severity on failure |
+|-----------------------|---------------------------------------------------------------------------------------------------|---------------------|
+| `ns_resolution`       | Verifies that every NS host name declared in the delegation resolves to at least one IP address.  | CRITICAL            |
+| `ns_axfr_refused`     | Verifies that AXFR zone transfers are refused by every authoritative nameserver.                  | CRITICAL            |
+| `ns_ixfr_refused`     | Verifies that IXFR zone transfers are refused by every authoritative nameserver.                  | WARNING             |
+| `ns_no_recursion`     | Verifies that authoritative nameservers do not advertise recursion (RA bit unset).                | WARNING             |
+| `ns_any_handled`      | Verifies that ANY queries are handled per RFC 8482 (HINFO or minimal answer).                     | WARNING             |
+| `ns_is_authoritative` | Verifies that nameservers answer authoritatively (AA bit set) for the zone.                      | INFO                |
+
 ## License
 
-This project does **not** depend on the happyDomain core repository: the
-few host types it needs (`ServiceMessage`, `abstract.Origin`,
-`abstract.NSOnlyOrigin`) are mirrored as minimal local copies of their
-JSON wire shapes. It only depends on
-[`checker-sdk-go`](https://git.happydns.org/checker-sdk-go) (Apache 2.0)
-and [`miekg/dns`](https://github.com/miekg/dns) (BSD 3-Clause).
+MIT (see `LICENSE`). Third-party attributions in `NOTICE`.
