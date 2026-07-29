@@ -15,7 +15,7 @@ import (
 // Version is the plugin's version. It defaults to "custom-build" and is
 // meant to be overridden by the CI at link time:
 //
-//	go build -buildmode=plugin -ldflags "-X main.Version=1.2.3" -o checker-ns-restrictions.so ./plugin
+//	go build -buildmode=plugin -trimpath -tags netgo -ldflags "-X main.Version=1.2.3" -o checker-ns-restrictions.so ./plugin
 var Version = "custom-build"
 
 // NewCheckerPlugin is the symbol resolved by happyDomain when loading the
